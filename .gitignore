@@ -1,0 +1,22 @@
+# Raw inputs. The BNR and EA-MPD workbooks are not ours to redistribute, and
+# the published Jarocinski-Karadi file is fetched by hand - see the README.
+# The directory itself is kept, because git does not track empty directories
+# and 01 writes into data/processed/ without creating it.
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Generated outputs. Every figure and table is produced by a single pass of
+# the pipeline, so committing them would only create a second copy to sync.
+figures/*
+tables/*
+!figures/.gitkeep
+!tables/.gitkeep
+
+renv/library/
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj.user
+.DS_Store
