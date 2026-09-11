@@ -1,31 +1,32 @@
-# ==============================================================================
 # functions/shock_helpers.R
 #
 # EA-MPD loading and the two shock decompositions.
 #
-#   Altavilla et al. (2019)   which dimension of ECB communication moved
-#                             markets: Target, Timing, Forward Guidance, QE
-#   Jarocinski-Karadi (2020)  what kind of news it was: monetary policy, or
-#                             information the ECB revealed about the economy
+# The Altavilla et al. (2019) dimensions ask which part of ECB communication
+# moved markets, through Target, Timing, Forward Guidance and QE. The
+# Jarocinski-Karadi (2020) decomposition asks what kind of news arrived,
+# separating a monetary policy shock from information the ECB revealed about
+# the economy. The two answer separate questions and each is reported on its
+# own.
 #
-# Different questions, never nested or combined. Both rotations are estimated
-# on the largest sample the data allow and only then subset to the Romanian
-# window - never re-estimated on 135 events.
+# The internally estimated rotations use the largest samples their inputs
+# allow before the resulting series are aligned with the Romanian event
+# window, which keeps the factor structure independent of the 135 events the
+# regressions use.
 #
-# The published JK series is the primary measure. The reconstruction here is an
-# audit of the method, not a substitute for the original; 05 compares them.
-# ==============================================================================
+# The published JK series is the primary measure. The internal implementation
+# independently replicates the published JK construction, and 05 verifies the
+# resulting series against the published file.
 
 SHORT_TENORS <- c("OIS_1M", "OIS_3M", "OIS_6M", "OIS_1Y")
 TERM_TENORS  <- c("OIS_1M", "OIS_3M", "OIS_6M", "OIS_1Y", "OIS_2Y", "OIS_5Y", "OIS_10Y")
 
 
-# ------------------------------------------------------------------------------
 # EA-MPD
-# ------------------------------------------------------------------------------
 
-# Mixed-format date column: older events are Excel serial numbers, recent ones
-# DD/MM/YYYY text. Reading it as a single type silently loses one group.
+# The date column arrives in two formats. Older events carry Excel serial
+# numbers and recent ones DD/MM/YYYY text, so each group is parsed on its own
+# terms; a single col_type would silently drop one of them.
 parse_eampd_date <- function(x) {
   x   <- as.character(x)
   out <- as.Date(rep(NA_character_, length(x)))
@@ -41,9 +42,9 @@ parse_eampd_date <- function(x) {
   out
 }
 
-# Each sheet carries about 1027 columns of which only the first 46 (A:AT) hold
-# data. Without an explicit range, readxl reads the padding and col_types
-# misaligns without erroring.
+# Each sheet carries about 1027 columns and only the first 46 (A:AT) hold data.
+# The explicit range keeps col_types aligned with the real columns; readxl
+# otherwise reads the trailing padding and shifts them silently.
 load_eampd_raw <- function(path = "data/raw/ECB_surprise_shocks.xlsx") {
   read_window <- function(sheet) {
     readxl::read_excel(
@@ -62,19 +63,21 @@ load_eampd_raw <- function(path = "data/raw/ECB_surprise_shocks.xlsx") {
   )
 }
 
-# OIS_* is the risk-free surprise term structure; DE* the Bund reaction, used
-# to validate the shock series; STOXX50 is required by the JK sign restriction;
-# EURUSD is the exchange-rate channel; IT/ES an optional periphery benchmark.
+# OIS_* carries the risk-free surprise term structure and DE* the Bund
+# reaction used for the intraday timing check in 02. STOXX50 enters the JK sign
+# restriction, EURUSD covers the exchange-rate channel, and IT/ES serve as a
+# periphery benchmark.
 EVENT_COLS <- c(
   "date",
   "OIS_1M", "OIS_3M", "OIS_6M", "OIS_1Y", "OIS_2Y", "OIS_3Y", "OIS_5Y", "OIS_10Y",
   "DE2Y", "DE5Y", "DE10Y", "IT10Y", "ES10Y", "STOXX50", "EURUSD"
 )
 
-# ois_5y and ois_10y are missing for the early events - the long end of the
-# intraday surprise curve does not exist before August 2011. Left as NA rather
-# than filled: a missing surprise is not a zero shock, and 03 drops the
-# affected events instead of imputing them.
+# ois_5y and ois_10y are missing for the early events, since the long end of
+# the intraday surprise curve begins in August 2011. They stay NA and 03 drops
+# the affected events from the family that needs them. A missing surprise says
+# nothing about the size of the shock, so a filled zero would manufacture
+# information.
 event_surprises <- function(mew, start_date) {
   mew |>
     dplyr::filter(date >= start_date) |>
@@ -83,13 +86,11 @@ event_surprises <- function(mew, start_date) {
 }
 
 
-# ------------------------------------------------------------------------------
 # Factor machinery
-# ------------------------------------------------------------------------------
 
-# Principal components of the covariance matrix - covariance and not
-# correlation, since every column is already in basis points and standardising
-# would discard the relative volatility of each tenor.
+# Principal components of the covariance matrix. Every column already sits in
+# basis points, so the covariance form preserves the relative volatility of
+# each tenor, which standardising would flatten.
 #
 # Scores are whitened to unit variance and the scale absorbed into the
 # loadings. PCA scores have covariance diag(eigenvalues), and an orthogonal
@@ -107,54 +108,53 @@ pca_cov <- function(X, k) {
   )
 }
 
-# With unit-variance orthogonal factors this is cov(ref, f), the structural
-# loading, not merely a fitted slope.
+# With unit-variance orthogonal factors this returns cov(ref, f), which is the
+# structural loading itself.
 loading_on <- function(f, ref) as.numeric(stats::coef(stats::lm(ref ~ f))[2])
 
-# Altavilla normalisation: rescale so the loading on `ref` is exactly 1, and a
-# coefficient on the factor reads as bp per 1 bp of that reference maturity.
-# Note the direction - multiply. If ref = b * f the factor wanted is b * f, so
-# dividing leaves a loading of b^2, which corrupts every reported magnitude
-# while leaving every t-statistic untouched.
+# Altavilla normalisation. Rescaling by the loading on `ref` sets that loading
+# to exactly 1, so a coefficient on the factor reads as bp per 1 bp of the
+# reference maturity. The direction is a multiplication. Given ref = b * f the
+# wanted factor is b * f, and dividing would leave a loading of b^2, which
+# rescales every reported magnitude while each t-statistic stays put.
 to_bp <- function(f, ref) f * loading_on(f, ref)
 
 
-# ------------------------------------------------------------------------------
 # Altavilla-style dimensions
-# ------------------------------------------------------------------------------
 
-# Target from the Press Release window, the decision itself. Timing, Forward
-# Guidance and QE from the Press Conference window, rotated under:
+# Target comes from the Press Release window, the decision itself. Timing,
+# Forward Guidance and QE come from the Press Conference window, rotated under
+# two restrictions.
 #
-#   (i)  FG and QE have zero loading on the 1M OIS - neither moves the rate
-#        over the current maintenance period. This pins Timing to the 1M
+#   (i)  FG and QE have zero loading on the 1M OIS, so both leave the rate over
+#        the current maintenance period alone. This pins Timing to the 1M
 #        loading vector and leaves a plane for the other two.
-#   (ii) within that plane, QE maximises the 10Y loading; FG is its orthogonal
-#        complement, which mechanically sets FG's 10Y loading to zero.
+#   (ii) within that plane, QE is the direction maximising the 10Y loading and
+#        FG is its orthogonal complement, which places FG's 10Y loading at zero
+#        by construction.
 #
 # Three restrictions for the three degrees of freedom of a 3x3 rotation, so the
 # rotation is exactly identified.
 #
-# THIS IS NOT THE ALTAVILLA ET AL. IDENTIFICATION, and the block is labelled
-# Altavilla-style throughout for that reason. Restriction (i) and the four
-# normalisations below are theirs. Restriction (ii) is not: they split the same
-# plane by requiring QE to be the direction with the smallest variance from
-# 2 January 2002 to 7 August 2008, before the balance sheet became a policy
-# instrument. That restriction cannot be imposed on this sample. It needs
-# pre-crisis events, and before August 2011 the euro area long end exists only
-# as German Bund yields, which this project does not substitute into the OIS
-# term structure. The two rules are not interchangeable: applied to the same
-# plane, the published rule turns the QE direction substantially and gives
-# forward guidance a sizeable 10Y loading instead of the zero imposed here.
+# This is an Altavilla-style rotation, and the block carries that label
+# throughout. Restriction (i) and the four normalisations below follow
+# Altavilla et al. Restriction (ii) is this project's own. They identify QE as
+# the direction with the smallest variance from 2 January 2002 to 7 August
+# 2008, before the balance sheet became a policy instrument, which requires
+# pre-crisis events. Before August 2011 the euro area long end exists only as
+# German Bund yields, and this project keeps the OIS term structure pure, so
+# its sample opens in August 2011 and the pre-crisis restriction lies outside
+# its reach. The two rules diverge materially. Applied to the same plane, the
+# published rule turns the QE direction substantially and gives forward
+# guidance a sizeable 10Y loading in place of the zero imposed here.
 #
-# What follows from that: the factors below answer "which part of the term
-# structure moved" under a stated rotation, not "what Altavilla et al. call
-# Timing, FG and QE". Nothing else in the project depends on them - the
-# headline shocks are the published Jarocinski-Karadi series.
+# So the factors below answer which part of the term structure moved, under a
+# stated rotation. The headline shocks throughout the project remain the
+# published Jarocinski-Karadi series, which these factors leave untouched.
 #
-# Sample: short-end OIS is complete for all 315 EA-MPD events back to 1999, so
-# Target uses the full history. OIS_5Y and OIS_10Y do not exist before 4 August
-# 2011, so any factor defined by the long end is confined to the 128
+# On samples, the short-end OIS is complete for all 315 EA-MPD events back to
+# 1999, so Target uses the full history. OIS_5Y and OIS_10Y begin on 4 August
+# 2011, which confines any factor defined by the long end to the 128
 # complete-term-structure events.
 construct_altavilla_factors <- function(prw, pcw) {
   prw_cc <- prw[stats::complete.cases(prw[, SHORT_TENORS]), ]
@@ -195,8 +195,8 @@ construct_altavilla_factors <- function(prw, pcw) {
     if (Lr[ref, j] < 0) { Fr[, j] <- -Fr[, j]; Lr[, j] <- -Lr[, j] }
   }
 
-  # normalisation maturities follow Altavilla et al.: Target 1M, Timing 6M,
-  # FG 2Y, QE 10Y
+  # normalisation maturities follow Altavilla et al., with Target on 1M, Timing
+  # on 6M, FG on 2Y and QE on 10Y
   refs     <- list(pcw_cc$OIS_6M, pcw_cc$OIS_2Y, pcw_cc$OIS_10Y)
   scale_bp <- vapply(seq_len(3), function(j) loading_on(Fr[, j], refs[[j]]), numeric(1))
 
@@ -229,109 +229,154 @@ construct_altavilla_factors <- function(prw, pcw) {
 }
 
 
-# ------------------------------------------------------------------------------
 # Jarocinski-Karadi
-# ------------------------------------------------------------------------------
+
+# Independent replication of the published Jarocinski-Karadi pipeline, from
+# the raw EA-MPD workbook. Everything it returns carries the _own suffix and
+# feeds the validation exercise in 05.
+#
+# The two helpers below mirror the authors' MATLAB algorithm, code/mypc.m and
+# code/signrestr_median.m, so that there is no deliberate algorithmic
+# difference between the replication and the authors' implementation. The one
+# addition is an explicit PC1 sign orientation, which resolves the arbitrary
+# sign an SVD returns so that the R implementation follows the authors'
+# orientation.
+#
+# Both implementations round pc1 to eight decimals before the rotation, as
+# main.m does. The _own implementation keeps the resulting median-rotation
+# outputs at full precision, while the published file rounds MP and CBI to
+# eight decimals at export. That final export rounding produces the residual
+# deviation of roughly 5e-07 bp reported in 05.
+#
+# jk_mypc() follows mypc.m. Each tenor is divided by its own standard
+# deviation, the principal components are taken without centering, rows missing
+# every tenor return NA, and PC1 is rescaled to the standard deviation of the
+# reference series. Note the standardisation, which the covariance-PCA used for
+# the Altavilla-style factors does not apply.
+jk_mypc <- function(tab, varlist, var2scale) {
+  X     <- as.matrix(tab[, varlist])
+  imiss <- rowSums(is.na(X)) == ncol(X)
+  X[is.na(X)] <- 0
+  X     <- sweep(X, 2, apply(X, 2, stats::sd), "/")
+  sv    <- svd(X)
+  v1    <- sv$v[, 1]
+  if (sum(v1) < 0) v1 <- -v1              # orient PC1 to load positively
+  score1 <- as.vector(X %*% v1)
+  score1[imiss] <- NA
+  list(
+    pc1       = score1 / stats::sd(score1, na.rm = TRUE) *
+                stats::sd(tab[[var2scale]], na.rm = TRUE),
+    var_share = sv$d[1]^2 / sum(sv$d^2)
+  )
+}
+
+# jk_signrestr_median() follows signrestr_median.m. M = [pc1, equity] is
+# decomposed into two orthogonal shocks summing to pc1, the first lowering
+# equities and the second raising them. The sign restrictions leave an interval
+# of admissible rotation angles and the midpoint is taken, which is the
+# authors' default w = 0.5. Both the data matrix and the QR factorisation are
+# used undemeaned, as in the original.
+jk_signrestr_median <- function(M, w = 0.5) {
+  ok <- !is.na(rowSums(M))
+  qd <- qr(M[ok, , drop = FALSE])
+  Q  <- qr.Q(qd); R <- qr.R(qd)
+  S  <- diag(sign(diag(R)), 2, 2)
+  Q  <- Q %*% S; R <- S %*% R
+
+  lo <- if (R[1, 2] > 0) atan(R[1, 2] / R[2, 2]) else 0
+  hi <- if (R[1, 2] > 0) pi / 2 else atan(-R[2, 2] / R[1, 2])
+  a  <- (1 - w) * lo + w * hi
+
+  P <- matrix(c(cos(a), -sin(a), sin(a), cos(a)), 2, 2)
+  D <- diag(c(R[1, 1] * cos(a), R[1, 1] * sin(a)))
+  U <- matrix(NA_real_, nrow(M), 2)
+  U[ok, ] <- Q %*% P %*% D
+  list(U = U, arc = c(lo, hi), angle = a)
+}
+
+# main.m drops three announcements that the ECB made jointly with the Federal
+# Reserve, before the component is extracted. They fall outside the Romanian
+# window but inside the estimation sample, so the exclusion belongs here.
+JK_JOINT_FED_DATES <- as.Date(c("2001-09-13", "2001-09-17", "2008-10-08"))
 
 # PC1 of the short-end Monetary Event window surprises, scaled to the
 # volatility of the 1Y OIS, combined with the equity surprise. Both shocks
 # raise the policy rate; a monetary policy shock lowers equities, an
-# information shock raises them.
+# information shock raises them. The median rotation lets both shocks occur in
+# one event, while the poor man's rule assigns each event wholly to one and
+# travels as a robustness check.
 #
-# The sign restrictions leave an arc of admissible rotations rather than a
-# point - Sigma has three distinct elements and B four parameters, so one
-# degree of freedom survives. The median rotation is the representative taken
-# here and allows both shocks in one event; the poor man's rule assigns each
-# event wholly to one and is carried as a robustness check.
-#
-# Everything this returns carries the _own suffix: it is the audit measure,
-# never the baseline.
+# main.m works in percentage points per annum, so the rotation runs on pc1/100
+# beside the untouched equity surprise, and the results are returned in basis
+# points to match the rest of the panel.
 reconstruct_jk <- function(mew) {
-  cc <- mew[stats::complete.cases(mew[, c(SHORT_TENORS, "STOXX50")]), ]
-  pj <- pca_cov(as.matrix(cc[, SHORT_TENORS]), 1)
+  tab <- mew[!mew$date %in% JK_JOINT_FED_DATES, ]
 
-  pc1 <- as.vector(pj$scores[, 1])
-  if (cor(pc1, cc$OIS_1Y) < 0) pc1 <- -pc1
-  pc1 <- pc1 / sd(pc1) * sd(cc$OIS_1Y)
+  pcx <- jk_mypc(tab, SHORT_TENORS, "OIS_1Y")
+  pc1 <- round(pcx$pc1 / 100, 8)                  # % p.a., as main.m exports
+  sr  <- jk_signrestr_median(cbind(pc1, tab$STOXX50))
 
-  p1 <- pc1 - mean(pc1)
-  sx <- cc$STOXX50 - mean(cc$STOXX50)
-
-  P  <- t(chol(cov(cbind(p1, sx))))
-  th <- seq(0, 2 * pi, length.out = 200001)
-  ct <- cos(th); st <- sin(th)
-  adm <- (P[1, 1] * ct > 0) &
-         (P[2, 1] * ct + P[2, 2] * st < 0) &
-         (-P[1, 1] * st > 0) &
-         (-P[2, 1] * st + P[2, 2] * ct > 0)
-  stopifnot(any(adm))
-
-  th_med <- median(th[adm])
-  Q <- matrix(c(cos(th_med), sin(th_med), -sin(th_med), cos(th_med)), 2, 2)
-  B <- P %*% Q
-  e <- solve(B) %*% t(cbind(p1, sx))
-
+  keep <- !is.na(sr$U[, 1])
   list(
     shocks = data.frame(
-      date          = cc$date,
-      jk_pc1_own    = pc1,
-      jk_mp_own     = B[1, 1] * e[1, ],
-      jk_cbi_own    = B[1, 2] * e[2, ],
-      jk_mp_pm_own  = ifelse(pc1 * cc$STOXX50 <  0, pc1, 0),
-      jk_cbi_pm_own = ifelse(pc1 * cc$STOXX50 >= 0, pc1, 0)
+      date          = tab$date[keep],
+      jk_pc1_own    = 100 * pc1[keep],
+      jk_mp_own     = 100 * sr$U[keep, 1],
+      jk_cbi_own    = 100 * sr$U[keep, 2],
+      jk_mp_pm_own  = 100 * ifelse(pc1[keep] * tab$STOXX50[keep] <  0, pc1[keep], 0),
+      jk_cbi_pm_own = 100 * ifelse(pc1[keep] * tab$STOXX50[keep] >= 0, pc1[keep], 0)
     ),
     diagnostics = list(
-      n              = nrow(cc),
-      pc1_var_share  = pj$var_share[1],
-      arc_degrees    = 180 / pi * range(th[adm]),
-      median_degrees = 180 / pi * th_med,
-      adds_up        = max(abs(B[1, 1] * e[1, ] + B[1, 2] * e[2, ] - p1))
+      n              = sum(keep),
+      pc1_var_share  = pcx$var_share,
+      arc_degrees    = 180 / pi * sr$arc,
+      median_degrees = 180 / pi * sr$angle,
+      adds_up        = max(abs(sr$U[keep, 1] + sr$U[keep, 2] - pc1[keep]))
     )
   )
 }
 
 # The published decomposition, converted from percentage points to basis
-# points. Makes no reference to reconstruct_jk(), so the primary measure is
-# independent of the reconstruction rather than calibrated to it.
+# points. This function reads the published file alone, which keeps the primary
+# measure independent of reconstruct_jk().
 #
-# THE CONVERSION IS A UNIT CHANGE, NOT A NORMALISATION. The authors have
-# already normalised: mypc.m rescales the first principal component to the
-# standard deviation of the OIS_1Y surprise in the EA-MPD input, which is in
-# basis points, and main.m then divides by 100:
+# The conversion is a unit change and the authors' own normalisation is
+# retained. mypc.m rescales the first principal component to the standard
+# deviation of the OIS_1Y surprise in the EA-MPD input, which is in basis
+# points, and main.m then divides by 100.
 #
 #     pc1 = mypc(tab, irnames, "OIS_1Y")/100;
 #
-# so the published pc1, MP and CBI are in percentage points per annum - the
-# README describes pc1 as "scaled to have the same standard deviation as the
-# OIS1Y Monetary Event-window change (in % p.a.)". Multiplying by 100 returns
-# basis points and nothing else.
+# The published pc1, MP and CBI therefore arrive in percentage points per
+# annum, which the repository README states as pc1 "scaled to have the same
+# standard deviation as the OIS1Y Monetary Event-window change (in % p.a.)".
+# Multiplying by 100 recovers basis points.
 #
-# What this must NOT be is sd(OIS_1Y)/sd(pc1) computed on the events this
-# project happens to use. That looks like the same operation and is not: it
-# renormalises an already-normalised series to the volatility of a subsample,
-# which on this sample gives 102.11 rather than 100 and inflates every reported
-# magnitude by 2.1%. The equity column is the check that the two are different
-# operations - main.m leaves STOXX50 alone, and it matches the workbook exactly,
-# while pc1 does not.
+# The operation to keep clear of this one is sd(OIS_1Y)/sd(pc1) computed on the
+# events this project uses. That renormalises an already-normalised series to
+# the volatility of a subsample, yields 102.11 here in place of 100, and
+# inflates every reported magnitude by 2.1%. The equity column separates the
+# two cases, since main.m leaves STOXX50 in EA-MPD units and it matches the
+# workbook exactly, while pc1 sits a factor of 100 below.
 #
-# `since` keeps the diagnostics deterministic: the published file on GitHub runs
-# from 1999 and this project uses the events from 2011 onwards. It no longer
-# affects any coefficient, since the conversion is now a constant.
+# `since` keeps the diagnostics deterministic. The published file on GitHub
+# runs from 1999 and this project uses the events from 2011 onwards. With the
+# conversion now a constant, the filter governs the reported counts alone.
 #
-# Two counts are returned because they answer different questions: n_official
-# is how many rows the file holds after the filter, n_overlap how many of them
-# the EA-MPD vintage also carries, which is the sample the equity check runs on.
+# Two counts answer separate questions. n_official is how many rows the file
+# holds after the filter, and n_overlap how many of those the EA-MPD vintage
+# also carries, which is the sample the equity check runs on.
 #
-# equity_max_abs_dev compares the STOXX50 surprise the published file carries
-# against the same column in the workbook read here. It is the check that the
-# workbook is being read correctly: if the two files agree on the equity input
-# to machine precision, a discrepancy in the shocks is about the decomposition,
-# not about parsing.
+# equity_max_abs_dev checks the STOXX50 input in the published file against
+# the workbook read here. Agreement to machine precision confirms consistent
+# parsing of that equity input, which is one of the two series the
+# decomposition runs on; 05 compares the shocks themselves against
+# reconstruct_jk().
 load_jk_official <- function(mew, path = "data/raw/jk_shocks_official.csv",
                              since = as.Date("2011-01-01")) {
   if (!file.exists(path))
     stop("Missing ", path, ". The primary shock measure is the published ",
-         "series: take shocks_ecb_mpd_me_d.csv from ",
+         "series. Download shocks_ecb_mpd_me_d.csv from ",
          "github.com/marekjarocinski/jkshocks_update_ecb and save it there.")
 
   off <- utils::read.csv(path)

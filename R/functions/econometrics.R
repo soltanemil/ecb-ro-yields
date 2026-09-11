@@ -1,19 +1,18 @@
-# ==============================================================================
 # functions/econometrics.R
 #
 # OLS with heteroskedasticity- and cluster-robust standard errors, and Wald
 # tests of linear restrictions. Used by 02-06.
 #
-# The sandwich estimators are written out rather than taken from the sandwich
-# package, so the project takes no direct dependency beyond readxl, dplyr,
-# tidyr and ggplot2, and the algebra is short enough to check directly. HC0
-# carries no df correction, which is what makes the numbers comparable with the
-# timing exercise in 02.
+# The sandwich estimators are written out here. Direct dependencies stay at
+# readxl, dplyr, tidyr and ggplot2, and the algebra is short enough for a
+# reader to check line by line. HC0 uses the unadjusted sandwich covariance and
+# serves as the common headline covariance estimator, matching the timing
+# exercise in 02.
 #
-# p-values use the normal distribution and Wald statistics the chi-squared,
-# including for the clustered fits. With 135 event clusters this is the usual
-# asymptotic choice; in a much smaller cluster count it would not be.
-# ==============================================================================
+# Inference is asymptotic. p-values come from the normal distribution and Wald
+# statistics from the chi-squared, clustered fits included, which the 135 event
+# clusters support comfortably. A smaller cluster count would call for a
+# finite-sample adjustment.
 
 
 # OLS with a robust or cluster-robust covariance matrix.
@@ -23,8 +22,8 @@
 #   HC3   u_i^2 / (1 - h_i)^2, the leverage correction that matters at this
 #         sample size
 #
-# `cluster` names a column in `data`; when supplied it overrides `vcov` and the
-# meat is summed over clusters with the G/(G-1) * (n-1)/(n-k) factor.
+# `cluster` names a column in `data`. Supplying it overrides `vcov` and sums
+# the meat over clusters with the G/(G-1) * (n-1)/(n-k) factor.
 fit_ols_robust <- function(formula, data, vcov = "HC0", cluster = NULL) {
   stopifnot(vcov %in% c("HC0", "HC1", "HC3"))
 
@@ -88,8 +87,9 @@ coef_of <- function(fit, term) unname(fit$b[term])
 t_of    <- function(fit, term) unname(fit$t[term])
 
 
-# Restriction matrix from named weight vectors, so that a hypothesis reads as
-# the algebra it is:  restrictions(names(fit$b), c(jk_mp = 1, jk_cbi = -1))
+# Restriction matrix from named weight vectors, so a hypothesis reads as the
+# algebra it is. The call restrictions(names(fit$b), c(jk_mp = 1, jk_cbi = -1))
+# tests equality of the two coefficients.
 restrictions <- function(term_names, ...) {
   rows <- list(...)
   R <- matrix(0, length(rows), length(term_names),
@@ -101,8 +101,8 @@ restrictions <- function(term_names, ...) {
   R
 }
 
-# Wald test of R b = r. Uses the covariance matrix carried by `fit`, so
-# switching a specification to HC3 or clustered errors also switches the test.
+# Wald test of R b = r, using the covariance matrix carried by `fit`. Switching
+# a specification to HC3 or to clustered errors switches the test with it.
 wald_test <- function(fit, R, r = rep(0, nrow(R))) {
   R <- as.matrix(R)
   if (!is.null(colnames(R))) R <- R[, names(fit$b), drop = FALSE]

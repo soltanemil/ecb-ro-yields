@@ -6,17 +6,17 @@ Do ECB surprises transmit to the Romanian sovereign yield curve, and does it
 matter whether a surprise is monetary policy news or information the ECB
 reveals about the economy?
 
-Romania sits outside the euro area and runs its own monetary policy, but the
-two markets are linked through euro funding, non-resident participation in the
-government bond market, and regional risk appetite. The answer to the second
-question matters: the two components move Romanian yields in opposite
-directions, which is why an undecomposed surprise measure appears to do so
-little.
+Romania sits outside the euro area and runs its own monetary policy. The two
+markets are linked all the same, through euro funding, through non-resident
+participation in the government bond market, and through regional risk
+appetite. Whether the distinction between the two kinds of surprise matters is
+an empirical question, and here it does. The estimated Romanian responses to
+the two components carry opposite signs, so an aggregate surprise measure
+averages over heterogeneity that the decomposition brings out.
 
 ## Identification and timing
 
-The identifying assumption rests on a timing asymmetry, which determines the
-entire specification.
+Everything in the specification follows from a single timing asymmetry.
 
 | | Time (Frankfurt) |
 |---|---|
@@ -26,23 +26,26 @@ entire specification.
 
 In both regimes the Romanian fixing on the announcement day is struck
 **before** the announcement, and is therefore predetermined with respect to the
-surprise. The response is measured on the first fixing able to incorporate it:
+surprise. The response has to be read off the first fixing able to incorporate
+it.
 
 ```
 dy_i = y_{F(i)} - y_{F(i)-1}
 ```
 
 where `F(i)` indexes the first BNR fixing struck strictly after ECB event `i`.
-This is not `lead(date, 1)`: it is defined when an event falls on a Romanian
-public holiday, it spans weekends and holiday bridges correctly, and it
-discards no events.
+Indexing the fixings that actually exist handles an event falling on a Romanian
+public holiday, carries weekends and holiday bridges correctly, and discards no
+events. A calendar lead such as `lead(date, 1)` would break on all three
+counts.
 
-`R/02_timing_validation.R` treats this as a falsification design rather than an
-assertion. Four conditions must hold jointly, and do: the Bund reacts strongly
-inside the EA-MPD intraday window; the estimate on the predetermined Romanian
-fixing is small and statistically indistinguishable from zero; the first
-subsequent fixing does respond; and the estimate for the window after that is
-again small and indistinguishable from zero.
+`R/02_timing_validation.R` puts the convention through a falsification test
+instead of asserting it. Four conditions have to hold jointly, and all four do.
+The Bund reacts strongly inside the EA-MPD intraday window. The estimate on the
+predetermined Romanian fixing is small and statistically indistinguishable from
+zero. The first subsequent fixing shows the largest response, and its 10Y
+estimate is statistically distinguishable from zero. The estimate for the
+window after that is again small and indistinguishable from zero.
 
 ## Data
 
@@ -52,61 +55,73 @@ again small and indistinguishable from zero.
 | ECB intraday surprises | EA-MPD, Altavilla et al. (2019) | 315 events from 1999; 135 in the Romanian overlap |
 | Decomposed policy and information shocks | Jarocinski and Karadi, published series | the same 135 events |
 
-None of the three inputs is redistributed here. To reproduce the project, place
-in `data/raw/`:
+None of the three inputs is redistributed here. Reproducing the project means
+placing three files in `data/raw/`.
 
-- `titluri_de_stat_ro.xlsx` — the BNR government securities fixing
-- `ECB_surprise_shocks.xlsx` — the EA-MPD workbook
-- `jk_shocks_official.csv` — `shocks_ecb_mpd_me_d.csv` from
+- `titluri_de_stat_ro.xlsx`, the BNR government securities fixing
+- `ECB_surprise_shocks.xlsx`, the EA-MPD workbook
+- `jk_shocks_official.csv`, which is `shocks_ecb_mpd_me_d.csv` from
   [github.com/marekjarocinski/jkshocks_update_ecb](https://github.com/marekjarocinski/jkshocks_update_ecb),
-  renamed. Only the rows from 2011 onwards are used, and `load_jk_official()`
-  enforces that with an explicit filter so the reported event counts do not
+  renamed. Only the rows from 2011 onwards are used. `load_jk_official()`
+  enforces that with an explicit filter, so the reported event counts do not
   depend on how the file was trimmed before saving.
 
 ## Shock measures
 
 The primary measure is the published Jarocinski-Karadi decomposition, converted
-from percentage points to basis points by multiplying by 100. It carries no
-suffix in the code: `jk_mp`, `jk_cbi`.
+from percentage points to basis points by multiplying by 100. In the code it
+carries no suffix and appears as `jk_mp` and `jk_cbi`.
 
-The conversion is a unit change and nothing more. The authors have already
-normalised the series — `mypc.m` rescales the first principal component to the
-standard deviation of the OIS_1Y surprise in the EA-MPD input, which is in
-basis points, and `main.m` then divides by 100, which is why their README calls
-`pc1` *"scaled to have the same standard deviation as the OIS1Y Monetary
-Event-window change (in % p.a.)"*. Re-estimating a scale factor as
-`sd(OIS_1Y)/sd(pc1)` on this project's 135 events would renormalise an
-already-normalised series to the volatility of a subsample; on this sample that
-gives 102.11 instead of 100 and inflates every reported magnitude by 2.1%.
+That conversion changes units and does nothing else. Normalisation has already
+been carried out by the authors. `mypc.m` rescales the first principal
+component to the standard deviation of the OIS_1Y surprise in the EA-MPD input,
+which is measured in basis points, and `main.m` then divides by 100. Their
+README accordingly describes `pc1` as *"scaled to have the same standard
+deviation as the OIS1Y Monetary Event-window change (in % p.a.)"*. Re-estimating
+a scale factor as `sd(OIS_1Y)/sd(pc1)` over this project's 135 events would
+renormalise an already normalised series to the volatility of a subsample. On
+this sample it returns 102.11 in place of 100, inflating every reported
+magnitude by 2.1%.
 
-The decomposition is also reconstructed from the raw EA-MPD windows, under the
-`_own` suffix. On the 135 overlapping events the reconstruction correlates with
-the published series at 0.997 to 0.999, agrees with its poor man's
-classification on 87% of events — every disagreement sitting on a near-zero
-surprise — and gives the same headline. The equity surprise, which is the
-other input to the decomposition, agrees between the published file and the
-workbook read here to machine precision, so the remaining gap is about the
-principal component rather than about parsing; it is consistent with the PCA
-being estimated on a different event set, though nothing here isolates that as
-the cause. **No headline result is estimated on the reconstruction**; it exists so that the method can
-be audited, and it is reported in `05`.
+A second version of the decomposition is built here from the raw EA-MPD
+workbook and carries the `_own` suffix. It transcribes the authors' own MATLAB,
+`mypc.m` for the principal component and `signrestr_median.m` for the
+sign-restricted rotation, and it applies the same event filtering, excluding
+the three joint Fed and ECB announcements that `main.m` drops before
+extraction. The result reproduces the published series exactly. Compared
+against the published values with no rescaling, `pc1` and both poor man's
+series are bit-identical, and the two median shocks deviate by at most
+5.0e-07 bp, which is the eight-decimal rounding the published file carries at
+export. Correlations are 1.000 with a unit slope, the poor man's classification
+agrees on all 135 events, and regressions on the two series return the same
+coefficients to three decimals.
 
-The Target / Timing / Forward Guidance / QE dimensions are a *separate*
-exercise, answering which part of the term structure moved rather than what
-kind of news it was. The two are never nested or combined.
+What that agreement establishes is the implementation, and nothing beyond it.
+The two series are one estimator implemented twice, so their coincidence says
+that the decomposition described in the paper is the decomposition in the
+published file, and that the workbook is read correctly here. It carries no
+independent empirical content. **No headline result is estimated on the
+reconstruction.** The published series stays primary, being the authors' own
+output, and the replication check is reported in `05`.
 
-That second block is **Altavilla-style, not a replication of Altavilla et al.**
-Their short-end restriction — forward guidance and QE do not load on the 1M OIS
-— and their four normalisations (Target 1M, Timing 6M, FG 2Y, QE 10Y) are
-imposed here. Their third restriction is not: they identify QE as the direction
-with the smallest variance between 2 January 2002 and 7 August 2008, which
-needs pre-crisis events, and before August 2011 the euro area long end exists
-only as German Bund yields that this project does not substitute into the OIS
-curve. The rotation used instead defines QE as the direction maximising the 10Y
-loading, which mechanically sets forward guidance's 10Y loading to zero. The
-two rules are not interchangeable — applied to the same plane the published
-rule turns the QE direction substantially — so the factors below should be read
-as a stated term-structure rotation, not as the paper's Timing, FG and QE.
+The Target, Timing, Forward Guidance and QE dimensions form a *separate*
+exercise. They answer which part of the term structure moved, where the
+decomposition above answers what kind of news moved it. The two exercises are
+never nested or combined.
+
+**That second block is Altavilla-style. It does not replicate Altavilla et
+al.** Their short-end restriction, under which forward guidance and QE do not
+load on the 1M OIS, is imposed here, as are their four normalisations (Target
+1M, Timing 6M, FG 2Y, QE 10Y). Their third restriction is left out. They
+identify QE as the direction with the smallest variance between 2 January 2002
+and 7 August 2008, which requires pre-crisis events, and before August 2011 the
+euro area long end exists only as German Bund yields, which this project does
+not substitute into the OIS curve. The rotation used in their place defines QE
+as the direction maximising the 10Y loading, and that mechanically sets the 10Y
+loading of forward guidance to zero. The two rules are not interchangeable.
+Applied to the same plane, the published rule turns the QE direction
+substantially, so the factors below should be read as a stated term-structure
+rotation and not as the paper's Timing, FG and QE.
 
 ## Repository structure
 
@@ -127,28 +142,27 @@ data/processed/              analysis_panel.rds (gitignored, regenerated by 01)
 figures/  tables/            generated outputs (gitignored)
 ```
 
-The architecture is deliberate, and it rests on two rules.
+Two rules govern the layout, and both are deliberate.
 
 **`01` may transform data. `02` to `06` may not.** All loading, cleaning, shock
-construction, event matching and curve-factor construction happens in `01`,
-which ends with assertions that constitute a contract: if it finishes without
-error, the panel has the shape the analysis expects and nothing downstream
-checks again. `02` to `06` read `analysis_panel.rds` and only analyse it. None
-of them cleans, matches, joins or renames anything. If a new variable is needed
-in three months, there is exactly one place it goes.
+construction, event matching and curve-factor construction happens in `01`.
+That script ends with assertions which constitute a contract. If it finishes
+without error, the panel has the shape the analysis expects, and nothing
+downstream checks again. `02` to `06` read `analysis_panel.rds` and analyse it.
+None of them cleans, matches, joins or renames anything. A new variable needed
+in three months has exactly one place to go.
 
 **`functions/` may hold reusable operations, never a hidden specification.**
 `fit_ols_robust()`, `wald_test()` and `first_available_fixing()` belong there.
 `run_headline_model()` never would, because it would conceal which regression
-is being estimated. A little repetition in `03` to `06` is worth more than an
-abstraction that hides the model — every specification in this project should
+is being estimated. A little repetition across `03` to `06` is worth more than
+an abstraction that hides the model. Every specification in this project should
 be readable as the algebra it is, at the point where it is estimated.
 
 ## Running it
 
-Tested with R 4.5.2. Package versions are recorded in `renv.lock`; the
-lockfile records package versions and the R version it was created under, and
-does not install or pin the R executable itself.
+Tested with R 4.5.2. `renv.lock` records the package versions and the R version
+under which it was created. It does not install or pin the R executable itself.
 
 ```r
 renv::restore()
@@ -160,8 +174,8 @@ source("R/05_robustness.R")
 source("R/06_mechanism.R")
 ```
 
-`02` carries its reference values in its header. If they do not reproduce, the
-pipeline has changed and the numbers below need re-checking.
+`02` carries its reference values in its header. Should they fail to reproduce,
+the pipeline has changed and the numbers below need re-checking.
 
 ## Results
 
@@ -175,50 +189,57 @@ pipeline has changed and the numbers below need re-checking.
 
 Basis points per 1 bp of shock, HC0 robust t-statistics in brackets, 135
 events. Equality of the two coefficients is rejected at every maturity, most
-sharply at the 10Y (p = 0.004), so ECB surprises are not homogeneous from
-Romania's point of view.
+sharply at the 10Y (p = 0.004). Seen from Romania, then, ECB surprises are not
+homogeneous.
 
-What is established, and what is not:
+Five points set out what the estimates support and where they stop short.
 
 * The **pooled negative coefficient is robust** to leave-one-out and to the
-  ex ante sample exclusions. All 135 leave-one-out refits lie between -0.88 and
-  -0.68 with t below -1.96; excluding 2011-2012, or 2020, or both, strengthens
-  rather than weakens it; the median rotation and the poor man's rule give the
-  same answer, as do the published and reconstructed shock series. Regime
-  heterogeneity is a separate question, treated below.
-* The effect is a **level shift**, not an established gradient. The joint null
-  that the four maturity coefficients are zero is rejected (p = 0.010); the
-  null that they are equal is not (p = 0.143).
+  episode-based sample exclusions. All 135 leave-one-out refits lie between
+  -0.88 and -0.68 with t below -1.96. Under each episode-based exclusion the
+  coefficient remains negative and precisely estimated, though its magnitude
+  varies across the exclusion samples. The median rotation and the poor man's
+  decomposition give the same qualitative result, though the poor man's
+  decomposition imposes the additional restriction that only one shock is
+  present in each announcement. Regime heterogeneity is a separate question,
+  treated below.
+* The response is **broad across maturities**. The joint null that the four
+  CBI maturity coefficients are zero is rejected (p = 0.010). The joint
+  equality test leaves the data compatible with a common response (p = 0.143),
+  while the endpoint slope contrast is negative and borderline under HC3
+  (p = 0.048). Evidence for a maturity gradient is therefore sensitive to the
+  test used.
 * The **magnitude is not a stable parameter**. Equality across policy regimes
-  is rejected (p = 0.0007, HC3). The coefficient is negative in the three
-  regimes estimated with useful precision, from -0.19 in 2011-2014 to -1.73 in
-  2022-2025. The positive estimate in 2020-2021 is highly leverage-sensitive
-  and statistically uninformative under HC3 — a statement about precision, not
-  about what happened.
-* Comparing the **two endpoint regimes** — 2011-2014 against 2022-2025, with
-  2015-2021 dropped from that regression — the contrast is statistically
-  distinguishable from zero on the 10Y (-1.544, t = -3.73 under HC3) but not on
-  the Level (-0.685, t = -1.33). This is a contrast between two endpoint
-  samples, not a full-sample post-2022 interaction. Because the two outcomes do
-  not tell the same story, it is recorded as heterogeneity rather than built
-  into a temporal narrative.
-* The **policy-shock side is the weaker half**. Its coefficient is positive
-  pooled but falls from 0.71 to 0.25 once the sovereign crisis and 2020 are
-  removed.
+  is rejected (p = 0.0007, HC3). In the three regimes estimated with useful
+  precision the coefficient is negative, running from -0.19 in 2011-2014 to
+  -1.73 in 2022-2025. The positive estimate in 2020-2021 is highly
+  leverage-sensitive and statistically uninformative under HC3, which is a
+  statement about precision and not about what happened.
+* Comparing the **two endpoint regimes**, 2011-2014 against 2022-2025 with
+  2015-2021 dropped from that regression, the contrast is precise on the 10Y
+  (-1.544, t = -3.73 under HC3) and imprecise on the Level (-0.685, t = -1.33).
+  The evidence from this endpoint comparison is therefore outcome-specific. It
+  does not by itself establish that the two outcome contrasts differ from one
+  another. It is a contrast between two endpoint samples, and a full-sample
+  post-2022 interaction would be a separate estimand.
+* The **policy-shock side is the weaker half**. Its pooled coefficient is
+  positive, and it falls from 0.71 to 0.25 once the sovereign crisis and 2020
+  are removed.
 
-Economic size: a one standard deviation information shock, 3.11 bp, is
+In economic terms, a one standard deviation information shock of 3.11 bp is
 associated with a fall of 2.5 bp in the Romanian 10Y.
 
 The Altavilla-style decomposition produces no individually significant
-coefficient at any maturity in the 128-event sample; the estimates are
+coefficient at any maturity in the 128-event sample, and the estimates are
 comparatively imprecise. QE has an increasing profile along the curve.
 
 ## Mechanism
 
-The same two shocks, applied to euro area yields already carried in the panel,
-place the Romanian result in a recognisable pattern. Responses to a 1 bp shock,
-HC0 t-statistics in brackets. Euro area outcomes use EA-MPD intraday windows;
-the Romanian leg uses the F(i) fixing window:
+Applied to the euro area yields already carried in the panel, the same two
+shocks place the Romanian result in a recognisable pattern. The table reports
+responses to a 1 bp shock with HC0 t-statistics in brackets. Euro area outcomes
+use the EA-MPD Monetary Event Window, while the Romanian leg uses the F(i)
+fixing window.
 
 | | Monetary policy | Information |
 |---|---|---|
@@ -229,40 +250,44 @@ the Romanian leg uses the F(i) fixing window:
 | RO 10Y net of DE 10Y | +0.203 (0.42) | **-0.858 (-4.07)** |
 
 A positive information shock raises the German short end, leaves the Bund 10Y
-estimate close to zero and imprecise (+0.042, t = 0.34), and compresses Italian
-and Spanish 10Y yields. The Romanian differential is negative, as the Italian
-and Spanish responses are; the magnitudes are not compared across the two,
-because the windows differ. Policy-shock point estimates are positive across
-the comparison, although the Romanian differential is imprecise (+0.203,
-t = 0.42).
+estimate close to zero and imprecise (+0.042, t = 0.34), and is associated with
+lower Italian and Spanish 10Y yields. The Romanian differential is negative, as
+the Italian and Spanish responses are. Magnitudes are not compared across the
+two, because the windows differ. Policy-shock point estimates are positive
+across the comparison, although the Romanian differential is imprecise
+(+0.203, t = 0.42).
 
-This is consistent with a sovereign risk-premium channel, and it is as far as
-the evidence goes. Identifying that channel would need Romanian-specific
-pricing — EUR/RON, a local equity index, sovereign CDS — and a design that does
-not condition on post-treatment variables. EUR/USD is reported as an outcome
-rather than a control for that reason, and responds to the policy shock but not
-to the information shock.
+All of this is consistent with a sovereign risk-premium channel, and that is as
+far as the evidence goes. Identifying the channel would call for
+Romanian-specific pricing (EUR/RON, a local equity index, sovereign CDS)
+together with a design that handles their post-treatment status explicitly.
+Conditioning on a potential mediator in the headline regression would change
+the estimand and can introduce post-treatment bias, which is why EUR/USD enters
+as an outcome. It responds to the policy shock, while its response to the
+information shock is indistinguishable from zero.
 
-Two caveats are recorded in `06`. The Romanian leg is measured over
-the roughly 24-hour F(i) window while every euro area leg is an intraday
-window, so these are differential responses rather than changes in an
-observable spread. And STOXX50 and `jk_pc1` are excluded as outcomes by
-construction: the two shocks are built from precisely those series, so
+Two caveats are recorded in `06`. The Romanian leg is measured over the F(i)
+window, usually about 24 hours and longer across weekends and holidays, while
+every euro area leg is measured over the full EA-MPD Monetary Event Window,
+which spans the press release and the press conference. The responses are
+therefore differential, and reading an observed spread change off them would
+require a common window. STOXX50 and `jk_pc1` are excluded as outcomes by
+construction, since the two shocks are built from precisely those series and
 regressing either on them is an identity.
 
 ## Canonical results
 
 `RESULTS.md` lists the project's reported numbers, their source script, and how
-each is worded here. It is the reference for any sentence containing a
-figure, and it separates the three distinctions that are easiest to blur: the
-reconstruction against the published shock series, HC0 against HC3, and the
-Romanian window against the euro area window.
+each is worded here. Any sentence containing a figure can be checked against
+it. It also keeps apart the three distinctions that are easiest to blur. These
+are the reconstruction against the published shock series, HC0 against HC3, and
+the Romanian window against the euro area window.
 
 ## Licence
 
-The original code in this repository is released under the MIT Licence; see
-`LICENSE`. That covers the code only. The three raw datasets are not
-redistributed here and are not covered by it: the BNR fixing, the EA-MPD
+The repository is released under the MIT Licence, reproduced in `LICENSE`. It
+covers the code and the documentation here. The three raw datasets form no part
+of this repository and are not redistributed. The BNR fixing, the EA-MPD
 workbook and the published Jarocinski-Karadi series remain subject to their
 providers' own terms, and each has to be obtained from the source named above.
 

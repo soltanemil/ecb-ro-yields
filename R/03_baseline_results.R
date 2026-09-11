@@ -1,37 +1,36 @@
-# ==============================================================================
 # 03_baseline_results.R
 #
 # Baseline responses of Romanian sovereign yields to ECB shocks, under two
 # identifications reported in two separate tables.
 #
-#   Altavilla-style   Target / Timing / Forward Guidance / QE, 128 events
-#   JK                MP / CBI, published series, 135 events
+# The Altavilla-style family carries Target, Timing, Forward Guidance and QE
+# over 128 events. The JK family carries MP and CBI from the published series
+# over all 135.
 #
-# The first family uses the short-end zero restrictions and the normalisations
-# of Altavilla et al. but not their third restriction, so it is labelled
-# Altavilla-style rather than Altavilla; construct_altavilla_factors() states
-# the difference.
+# The first family adopts the short-end zero restrictions and the
+# normalisations of Altavilla et al. while imposing its own third restriction,
+# which is why it carries the Altavilla-style label;
+# construct_altavilla_factors() sets out the difference.
 #
-# In:   data/processed/analysis_panel.rds
-# Out:  tables/baseline_altavilla.csv, tables/baseline_jk.csv,
-#       figures/baseline_results.png
+# Reads data/processed/analysis_panel.rds and writes
+# tables/baseline_altavilla.csv, tables/baseline_jk.csv and
+# figures/baseline_results.png.
 #
-# HC0 is the headline, for continuity with 02; HC1 and HC3 sit alongside as
-# small-sample checks rather than replacements.
+# HC0 is the headline, for continuity with 02, and HC1 and HC3 sit alongside as
+# small-sample checks.
 #
-# Each family is estimated jointly rather than one regressor at a time: the
-# responding Romanian fixing comes after both ECB windows, so a single change
-# can embed the press-release Target and the press-conference dimensions at
-# once. The three conference factors are orthogonal by construction; Target
-# comes from a different window and is not assumed orthogonal to them.
+# For each outcome, all shocks in a given family enter the same regression.
+# The responding Romanian fixing comes after both ECB windows, so a single change can embed the press-release Target and the
+# press-conference dimensions at once. The three conference factors are
+# orthogonal by construction, while Target comes from a separate window and is
+# left free to correlate with them.
 #
-# The two families run on different samples on purpose. The seven January-July
-# 2011 events lack a long-end surprise, so they are dropped from the first
-# family rather than imputed - a missing surprise is not a zero shock - while
-# the JK decomposition exists for all 135. Section 4 asks what that sample
-# restriction does to the univariate Target relation, which is the only part of
-# the family the seven events can speak to.
-# ==============================================================================
+# The two families run on different samples by design. The seven January-July
+# 2011 events lack a long-end surprise and leave the first family, since a
+# missing surprise says nothing about the size of the shock and a filled zero
+# would manufacture information; the JK decomposition exists for all 135.
+# Section 4 asks what that sample restriction does to the univariate Target
+# relation, which is the part of the family those seven events can speak to.
 
 library(dplyr)
 library(tidyr)
@@ -75,9 +74,7 @@ show_family <- function(res, title, units) {
 }
 
 
-# ------------------------------------------------------------------------------
 # Which dimension of ECB communication moved the curve?
-# ------------------------------------------------------------------------------
 
 ALTAVILLA <- c("target", "timing", "forward_guidance", "qe")
 
@@ -90,15 +87,13 @@ show_family(
         "maturity\n(target 1M, timing 6M, forward guidance 2Y, qe 10Y)")
 )
 
-cat("\nFactor correlations on the estimation sample:\n")
+cat("\nFactor correlations on the estimation sample\n")
 print(round(cor(dat[complete.cases(dat[, ALTAVILLA]), ALTAVILLA]), 2))
-cat("The three conference factors are orthogonal by construction; Target\n",
-    "against the other three is the entry that matters.\n", sep = "")
+cat("The three conference factors are orthogonal by construction, so Target\n",
+    "against the other three carries the informative entries.\n", sep = "")
 
 
-# ------------------------------------------------------------------------------
 # Policy news, or information about the economy?
-# ------------------------------------------------------------------------------
 
 res_jk    <- estimate_family(c("jk_mp", "jk_cbi"),       "JK median rotation")
 res_jk_pm <- estimate_family(c("jk_mp_pm", "jk_cbi_pm"), "JK poor man's")
@@ -111,17 +106,15 @@ show_family(res_jk,    "B. Policy news versus central bank information", jk_unit
 show_family(res_jk_pm, "B'. Same, poor man's sign restriction (robustness)", jk_units)
 
 
-# ------------------------------------------------------------------------------
 # What the common-sample restriction does to Target
-# ------------------------------------------------------------------------------
 
-# Target is the one factor defined on all 135 events, so it is the only one
-# whose sample sensitivity can be examined at all. The comparison below is
-# univariate on both sides: it asks whether the Target-yield relation shifts
-# when the seven events without a long-end surprise are dropped. It does not
-# and cannot speak to the Target coefficient of the joint model, which is not
-# estimable on 135 events because the conference factors are missing there.
-cat("\n=== Target alone, univariate, full versus common sample ===\n")
+# Target is the one factor defined on all 135 events, which makes it the only
+# one whose sample sensitivity can be examined. The comparison below is
+# univariate on both sides and asks whether the Target-yield relation shifts
+# once the seven events lacking a long-end surprise leave. Its scope stops
+# there. The joint model's Target coefficient requires the conference factors,
+# so it is estimable on the 128-event common sample alone.
+cat("\n=== Target alone, univariate, full against common sample ===\n")
 common <- complete.cases(dat[, ALTAVILLA])
 for (o in c("dy_12m", "dy_10y", "dy_slope")) {
   f    <- reformulate("target", response = o)
@@ -133,9 +126,7 @@ for (o in c("dy_12m", "dy_10y", "dy_slope")) {
 }
 
 
-# ------------------------------------------------------------------------------
 # Export
-# ------------------------------------------------------------------------------
 
 write.csv(res_altavilla, "tables/baseline_altavilla.csv", row.names = FALSE)
 write.csv(rbind(res_jk, res_jk_pm), "tables/baseline_jk.csv", row.names = FALSE)
@@ -162,7 +153,7 @@ p <- ggplot(plot_df, aes(outcome, estimate)) +
   labs(
     title    = "Romanian sovereign yield response, by shock dimension",
     subtitle = "First fixing after the announcement; Altavilla-style factors N = 128, Jarocinski-Karadi N = 135",
-    caption  = "Bars are 95% intervals, HC0 robust. Units differ by family - see the table headers.",
+    caption  = "Bars are 95% intervals, HC0 robust. Units differ by family; the table headers give them.",
     x = "Romanian maturity", y = "Basis points"
   ) +
   theme_minimal(base_size = 10) +
